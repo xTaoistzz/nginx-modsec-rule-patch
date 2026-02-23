@@ -2,14 +2,25 @@
 set -e
 
 # =============================================================================
-# NGINX MODSEC PATCH SCRIPT
+# NGINX MODSEC RULE PATCH SCRIPT
 # =============================================================================
-# This script patches existing ModSecurity installation at /etc/nginx/modsec
-# It will:
-#  - Backup current modsec directory
-#  - Sync new rules
-#  - Test nginx config
-#  - Reload nginx if test passes
+# This script overwrites ONLY selected ModSecurity rule files inside:
+#   /etc/nginx/modsec
+#
+# It does NOT:
+#   - delete any files
+#   - modify coreruleset/
+#   - auto reload nginx
+#
+# After patch:
+#   1. nginx -t
+#   2. systemctl reload nginx
+#
+# Manual rollback steps:
+#   1. Remove modified files
+#   2. Restore from backup directory shown below
+#   3. Run nginx -t
+#   4. Reload nginx
 # =============================================================================
 
 MODSEC_DIR="/etc/nginx/modsec"
@@ -17,59 +28,55 @@ LOCAL_RULES_DIR="$(pwd)/rules"
 TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
 BACKUP_DIR="/etc/nginx/modsec-backup-${TIMESTAMP}"
 
-echo "[+] Starting ModSecurity patch process..."
+echo "[+] Starting ModSecurity rule patch..."
 
 # -----------------------------------------------------------------------------
-# 1. Validate paths
+# 1. Validate directory
 # -----------------------------------------------------------------------------
 if [ ! -d "$MODSEC_DIR" ]; then
-  echo "[!] ERROR: $MODSEC_DIR not found. Aborting."
+  echo "[!] ERROR: $MODSEC_DIR not found."
   exit 1
 fi
 
 if [ ! -d "$LOCAL_RULES_DIR" ]; then
-  echo "[!] ERROR: Local rules directory not found at $LOCAL_RULES_DIR"
+  echo "[!] ERROR: Local rules directory not found."
   exit 1
 fi
 
 # -----------------------------------------------------------------------------
-# 2. Backup existing modsec directory
+# 2. Backup entire modsec directory
 # -----------------------------------------------------------------------------
 echo "[+] Creating backup at $BACKUP_DIR"
 cp -a "$MODSEC_DIR" "$BACKUP_DIR"
 
-echo "[+] Backup completed."
-
 # -----------------------------------------------------------------------------
-# 3. Sync rules
+# 3. Overwrite specific files only
 # -----------------------------------------------------------------------------
-echo "[+] Syncing new rules from $LOCAL_RULES_DIR to $MODSEC_DIR"
+echo "[+] Updating selected rule files..."
 
-rsync -av \
-  "$LOCAL_RULES_DIR"/ \
-  "$MODSEC_DIR"/
+FILES=(
+  "main.conf"
+  "modsecurity.conf"
+  "sec_actions.conf"
+  "sec_base_modsecurity_disable.conf"
+  "sec_rule_removal.conf"
+)
 
-echo "[+] Rules synced successfully."
+for file in "${FILES[@]}"; do
+  if [ -f "$LOCAL_RULES_DIR/$file" ]; then
+    cp -f "$LOCAL_RULES_DIR/$file" "$MODSEC_DIR/$file"
+    echo "    - Updated $file"
+  else
+    echo "    - Skipped $file (not found locally)"
+  fi
+done
 
-# -----------------------------------------------------------------------------
-# 4. Test nginx configuration
-# -----------------------------------------------------------------------------
-# echo "[+] Testing nginx configuration..."
-# if nginx -t; then
-#   echo "[+] Nginx configuration test passed."
-# else
-#   echo "[!] Nginx configuration test FAILED!"
-#   echo "[!] Restoring from backup..."
-#   rm -rf "$MODSEC_DIR"
-#   mv "$BACKUP_DIR" "$MODSEC_DIR"
-#   echo "[+] Rollback completed."
-#   exit 1
-# fi
-
-# -----------------------------------------------------------------------------
-# 5. Reload nginx
-# -----------------------------------------------------------------------------
-echo "[+] Reloading nginx..."
-systemctl reload nginx
-
-echo "[+] ModSecurity patch completed successfully."
+echo ""
+echo "[✓] Patch completed."
+echo ""
+echo "Next steps:"
+echo "  sudo nginx -t"
+echo "  sudo systemctl reload nginx"
+echo ""
+echo "Backup available at:"
+echo "  $BACKUP_DIR"
