@@ -1,0 +1,3 @@
+25/02/2026
+- sec_base_modsecurity_disable.conf ตั้งค่า SecRequestBodyLimit ไว้ที่ 13MB ก่อนหน้านี้เป็น 6GB
+- sec_actions.conf เพิ่ม ruleRemove 930120 ในส่วนของ history json field (เป็น False Positive)
